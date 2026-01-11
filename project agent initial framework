@@ -1,0 +1,98 @@
+import asyncio
+from playwright.async_api import async_playwright
+
+
+class Browser:
+    async def start(self):
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(headless=False)
+        self.context = await self.browser.new_context()
+        self.page = await self.context.new_page()
+
+    async def stop(self):
+        await self.browser.close()
+        await self.playwright.stop()
+
+
+class Memory:
+    def __init__(self):
+        self.bookmarks = []
+        self.actions = []
+
+    def log(self, msg):
+        self.actions.append(msg)
+
+    def bookmark(self, url):
+        self.bookmarks.append(url)
+
+
+class Planner:
+    def plan(self, instruction: str):
+        print("RAW INPUT:", repr(instruction))  # DEBUG
+
+        instruction = instruction.lower().strip()
+        plan = []
+
+        if "google" in instruction:
+            plan.append(("goto", "https://www.google.com"))
+
+        if "amazon" in instruction:
+            plan.append(("goto", "https://www.amazon.in"))
+
+        if "bookmark" in instruction:
+            plan.append(("bookmark", None))
+
+        if not any(a == "goto" for a, _ in plan):
+            raise RuntimeError("No navigation target detected")
+
+        return plan
+
+
+class Executor:
+    def __init__(self, page, memory):
+        self.page = page
+        self.memory = memory
+
+    async def run(self, action, value):
+        if action == "goto":
+            await self.page.goto(value, wait_until="domcontentloaded")
+            self.memory.log(f"Navigated → {value}")
+
+        elif action == "bookmark":
+            self.memory.bookmark(self.page.url)
+            self.memory.log(f"Bookmarked → {self.page.url}")
+
+
+class Agent:
+    def __init__(self, browser):
+        self.memory = Memory()
+        self.planner = Planner()
+        self.executor = Executor(browser.page, self.memory)
+
+    async def execute(self, instruction):
+        plan = self.planner.plan(instruction)
+        print("PLAN:", plan)
+
+        for action, value in plan:
+            await self.executor.run(action, value)
+
+
+async def main():
+    browser = Browser()
+    await browser.start()
+
+    agent = Agent(browser)
+
+    instruction = input("Enter instruction: ")
+    await agent.execute(instruction)
+
+    print("\nMEMORY:")
+    print(agent.memory.actions)
+    print("Bookmarks:", agent.memory.bookmarks)
+
+    input("\nPress ENTER to close")
+    await browser.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
